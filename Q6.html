@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Doanh số bán hàng theo Khung giờ</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .bar:hover { opacity: 0.8; }
+        .axis text { font-size: 12px; }
+        .title { font-size: 16px; font-weight: bold; }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            pointer-events: none;
+        }
+        .data-label {
+            font-size: 12px;
+            fill: white;
+            text-anchor: middle;
+        }
+    </style>
+</head>
+<body>
+    <h2>Doanh số bán hàng theo Khung giờ</h2>
+    <div id="bar-chart"></div>
+    <div id="summary"></div>
+
+    <script>
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
+
+        d3.csv(csvUrl).then(function(data) {
+            // Chuyển đổi dữ liệu
+            data.forEach(d => {
+                d["Thời gian tạo đơn"] = new Date(d["Thời gian tạo đơn"]);
+                d["Thành tiền"] = +d["Thành tiền"];
+            });
+
+            // Tính khung giờ
+            data.forEach(d => {
+                const hour = d["Thời gian tạo đơn"].getHours();
+                d["Khung giờ"] = `${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
+            });
+
+            // Tính toán Doanh số trung bình theo khung giờ
+            const salesSummary = d3.rollup(
+                data,
+                v => ({
+                    Doanh_so_Tong: d3.sum(v, d => d["Thành tiền"]),
+                    Ngay_Don_Hang: new Set(v.map(d => d["Thời gian tạo đơn"].toDateString())).size
+                }),
+                d => d["Khung giờ"]
+            );
+
+            const hourlySales = Array.from(salesSummary, ([khungGio, values]) => ({
+                "Khung giờ": khungGio,
+                "Doanh số bán TB": values.Doanh_so_Tong / values.Ngay_Don_Hang
+            }));
+
+            // Sắp xếp theo khung giờ từ 8:00 đến 23:59
+            const khungGioOrder = Array.from({length: 16}, (_, i) => `${String(i+8).padStart(2, '0')}:00-${String(i+8).padStart(2, '0')}:59`);
+            hourlySales.sort((a, b) => khungGioOrder.indexOf(a["Khung giờ"]) - khungGioOrder.indexOf(b["Khung giờ"]));
+
+            // Tìm khung giờ tốt nhất và kém nhất
+            const bestHour = hourlySales.reduce((max, curr) => curr["Doanh số bán TB"] > max["Doanh số bán TB"] ? curr : max);
+            const worstHour = hourlySales.reduce((min, curr) => curr["Doanh số bán TB"] < min["Doanh số bán TB"] ? curr : min);
+
+   
+            // Vẽ biểu đồ
+            createBarChart(hourlySales);
+
+        }).catch(error => console.error("Error loading CSV:", error));
+
+        function createBarChart(data) {
+            const margin = {top: 20, right: 30, bottom: 70, left: 60};
+            const width = 800 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            const svg = d3.select("#bar-chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            // Màu sắc chuyên nghiệp với Tableau10
+            const color = d3.scaleOrdinal(d3.schemeTableau10)
+                .domain(data.map(d => d["Khung giờ"]));
+
+            // Scale
+            const x = d3.scaleBand()
+                .domain(data.map(d => d["Khung giờ"]))
+                .range([0, width])
+                .padding(0.1);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d["Doanh số bán TB"])])
+                .range([height, 0]);
+
+            // Tooltip
+            const tooltip = d3.select("body").append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+
+            // Vẽ cột
+            svg.selectAll(".bar")
+                .data(data)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d["Khung giờ"]))
+                .attr("y", d => y(d["Doanh số bán TB"]))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d["Doanh số bán TB"]))
+                .attr("fill", d => color(d["Khung giờ"]))
+                .on("mouseover", (event, d) => {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 0.9);
+                    tooltip.html(`Doanh số TB: ${Math.round(d["Doanh số bán TB"]).toLocaleString()} VNĐ`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+
+            // Thêm datalabel nằm dọc trong cột
+            svg.selectAll(".data-label")
+                .data(data)
+                .enter()
+                .append("text")
+                .attr("class", "data-label")
+                .attr("x", d => x(d["Khung giờ"]) + x.bandwidth() / 2)
+                .attr("y", d => y(d["Doanh số bán TB"]) + 20) // Cách đỉnh cột 20px
+                .attr("transform", d => `rotate(-90, ${x(d["Khung giờ"]) + x.bandwidth() / 2}, ${y(d["Doanh số bán TB"]) + 20})`)
+                .text(d => `${Math.round(d["Doanh số bán TB"]/1000)}K`)
+                .attr("dy", ".35em");
+
+            // Trục
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x))
+                .selectAll("text")
+                .attr("transform", "rotate(-45)")
+                .style("text-anchor", "end");
+
+            svg.append("g")
+                .call(d3.axisLeft(y).tickFormat(d => `${Math.round(d/1000)}K`));
+
+            // Tiêu đề
+            svg.append("text")
+                .attr("class", "title")
+                .attr("x", width/2)
+                .attr("y", -5)
+                .attr("text-anchor", "middle")
+                .text("Doanh số bán hàng theo Khung giờ");
+        }
+    </script>
+</body>
+</html>

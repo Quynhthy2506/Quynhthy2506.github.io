@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Xác suất bán hàng</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .line { stroke-width: 2px; fill: none; }
+        .dot { fill: white; stroke-width: 2px; cursor: pointer; }
+        .dot:hover { r: 6; }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            pointer-events: none;
+            opacity: 0;
+        }
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .axis text { font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="title">Xác suất bán hàng theo Nhóm hàng</div>
+    <div id="line-chart"></div>
+    <script>
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
+
+        d3.csv(csvUrl).then(function(data) {
+            // Chuyển đổi dữ liệu
+            data.forEach(d => {
+                d["Thời gian tạo đơn"] = new Date(d["Thời gian tạo đơn"]);
+                d["Tháng"] = d["Thời gian tạo đơn"].getMonth() + 1; // Tháng từ 1-12
+            });
+
+            // Tính tổng số đơn hàng theo tháng
+            const totalOrdersPerMonth = new Map(
+                Array.from(d3.group(data, d => d["Tháng"]), ([thang, v]) => [thang, new Set(v.map(d => d["Mã đơn hàng"])).size])
+            );
+
+            // Tính số đơn hàng theo tháng và nhóm hàng
+            const monthlyData = d3.rollup(
+                data,
+                v => new Set(v.map(d => d["Mã đơn hàng"])).size,
+                d => d["Tháng"],
+                d => d["Mã nhóm hàng"]
+            );
+
+            // Tạo map cho tên nhóm hàng
+            const groupInfo = new Map([...new Set(data.map(d => [d["Mã nhóm hàng"], d["Tên nhóm hàng"]]))]);
+
+            // Tạo dữ liệu biểu đồ
+            const chartData = [];
+            monthlyData.forEach((groups, thang) => {
+                groups.forEach((soDonHang, maNhomHang) => {
+                    chartData.push({
+                        "Tháng": +thang,
+                        "Mã nhóm hàng": maNhomHang,
+                        "Số đơn hàng": soDonHang,
+                        "Xác suất bán": soDonHang / totalOrdersPerMonth.get(+thang),
+                        "Tên nhóm hàng": groupInfo.get(maNhomHang),
+                        "Nhóm hàng": `[${maNhomHang}] ${groupInfo.get(maNhomHang)}`
+                    });
+                });
+            });
+
+            createLineChart(chartData);
+        }).catch(error => console.error("Error loading CSV:", error));
+
+        function createLineChart(data) {
+            const margin = {top: 20, right: 30, bottom: 50, left: 60};
+            const width = 800 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            const svg = d3.select("#line-chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            // Màu sắc với Tableau10
+            const color = d3.scaleOrdinal(d3.schemeTableau10)
+                .domain([...new Set(data.map(d => d["Nhóm hàng"]))]);
+
+            // Scale
+            const x = d3.scalePoint()
+                .domain(d3.range(1, 13).map(d => `Tháng ${d.toString().padStart(2, '0')}`))
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d["Xác suất bán"])])
+                .nice()
+                .range([height, 0]);
+
+            // Trục
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x));
+
+            svg.append("g")
+                .call(d3.axisLeft(y).tickFormat(d => `${(d * 100).toFixed(0)}%`));
+
+            // Định nghĩa đường
+            const line = d3.line()
+                .x(d => x(`Tháng ${d["Tháng"].toString().padStart(2, '0')}`))
+                .y(d => y(d["Xác suất bán"]));
+
+            // Tooltip
+            const tooltip = d3.select("body").append("div")
+                .attr("class", "tooltip");
+
+            // Vẽ đường và marker cho từng nhóm hàng
+            const groups = d3.group(data, d => d["Nhóm hàng"]);
+            groups.forEach((values, nhomHang) => {
+                // Vẽ đường
+                svg.append("path")
+                    .datum(values)
+                    .attr("class", "line")
+                    .attr("stroke", color(nhomHang))
+                    .attr("d", line);
+
+                // Vẽ marker (điểm) cho từng giá trị trong nhóm
+                svg.append("g")
+                    .selectAll(".dot")
+                    .data(values)
+                    .enter()
+                    .append("circle")
+                    .attr("class", "dot")
+                    .attr("cx", d => x(`Tháng ${d["Tháng"].toString().padStart(2, '0')}`))
+                    .attr("cy", d => y(d["Xác suất bán"]))
+                    .attr("r", 5)
+                    .attr("stroke", color(nhomHang))
+                    .on("mouseover", (event, d) => {
+                        tooltip.style("opacity", 1)
+                            .html(`Nhóm hàng: ${d["Nhóm hàng"]}<br>Tháng: ${d["Tháng"].toString().padStart(2, '0')}<br>Xác suất: ${(d["Xác suất bán"] * 100).toFixed(2)}%`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 20) + "px");
+                    })
+                    .on("mouseout", () => tooltip.style("opacity", 0));
+            });
+        }
+    </script>
+</body>
+</html>

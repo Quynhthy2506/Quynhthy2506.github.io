@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Phân phối lượt mua hàng của khách hàng</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .chart-container {
+            display: flex;
+            justify-content: center;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .chart-wrapper { display: flex; flex-direction: column; align-items: center; }
+        .bar { fill: #26C6DA; }
+        .bar:hover { opacity: 0.8; }
+        .axis text { font-size: 12px; }
+        .title { font-size: 16px; margin-bottom: 5px; }
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 8px;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 4px;
+            pointer-events: none;
+            opacity: 0;
+        }
+    </style>
+</head>
+<body>
+    <h2 style="text-align: center;">Phân phối Lượt mua hàng</h2>
+    <div id="charts" class="chart-container"></div>
+    <div id="tooltip" class="tooltip"></div>
+
+    <script>
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
+
+        d3.csv(csvUrl).then(function(data) {
+            // Tính số lần mua của từng khách hàng
+            const soLanMua = d3.rollup(
+                data,
+                v => new Set(v.map(d => d["Mã đơn hàng"])).size,
+                d => d["Mã khách hàng"]
+            );
+
+            const repeatData = Array.from(soLanMua, ([maKhachHang, soLan]) => ({
+                "Mã khách hàng": maKhachHang,
+                "Số lần mua": soLan
+            }));
+
+            // Tính số lượng khách hàng theo số lần mua
+            const counts = d3.rollup(
+                repeatData,
+                v => v.length,
+                d => d["Số lần mua"]
+            );
+
+            const countsData = Array.from(counts, ([soLanMua, soLuong]) => ({
+                "Số lần mua": soLanMua,
+                "Số lượng khách hàng": soLuong
+            }));
+
+            // Đảm bảo có dữ liệu cho tất cả số lần mua từ 1 đến 22
+            const maxSoLanMua = 22;
+            const fullData = Array.from({ length: maxSoLanMua }, (_, i) => {
+                const soLan = i + 1;
+                const found = countsData.find(d => d["Số lần mua"] === soLan);
+                return {
+                    "Số lần mua": soLan,
+                    "Số lượng khách hàng": found ? found["Số lượng khách hàng"] : 0
+                };
+            });
+
+            // Vẽ biểu đồ histogram
+            createHistogram(fullData, "Phân phối Lượt mua hàng");
+
+        }).catch(error => console.error("Error loading CSV:", error));
+
+        function createHistogram(data, title) {
+            const margin = { top: 40, right: 20, bottom: 50, left: 60 };
+            const width = 800 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            const svg = d3.select("#charts")
+                .append("div")
+                .attr("class", "chart-wrapper")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const tooltip = d3.select("#tooltip");
+
+            // Sử dụng scaleBand cho trục X
+            const x = d3.scaleBand()
+                .domain(data.map(d => d["Số lần mua"]))
+                .range([0, width])
+                .padding(0.2); // Tạo khoảng cách giữa các cột
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d["Số lượng khách hàng"])])
+                .nice()
+                .range([height, 0]);
+
+            // Vẽ cột histogram
+            svg.selectAll(".bar")
+                .data(data)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d["Số lần mua"]))
+                .attr("width", x.bandwidth())
+                .attr("y", d => y(d["Số lượng khách hàng"]))
+                .attr("height", d => height - y(d["Số lượng khách hàng"]))
+                .on("mouseover", function(event, d) {
+                    tooltip.transition().duration(200).style("opacity", 0.9);
+                    tooltip.html(`Số lượng mua hàng: ${d["Số lần mua"]}<br>Số lượng KH: ${d["Số lượng khách hàng"]}`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mousemove", function(event) {
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function() {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                });
+
+            // Định dạng trục
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).tickFormat(d3.format("d")));
+
+            svg.append("g")
+                .call(d3.axisLeft(y).tickFormat(d => {
+                    if (d >= 1000) {
+                        return d % 1000 === 0 ? `${d / 1000}K` : `${(d / 1000).toFixed(1)}K`;
+                    }
+                    return d;
+                }));
+
+            // Bỏ viền spines
+            svg.selectAll(".domain").style("display", "none");
+
+            // Tiêu đề
+            svg.append("text")
+                .attr("class", "title")
+                .attr("x", width / 2)
+                .attr("y", -10)
+                .attr("text-anchor", "middle")
+                .text(title);
+        }
+    </script>
+</body>
+</html>

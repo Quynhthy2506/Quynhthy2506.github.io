@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Xác suất bán hàng</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .bar:hover { opacity: 0.8; }
+        .axis text { font-size: 14px; }
+        .title { font-size: 18px; font-weight: bold; }
+        .data-label { font-size: 12px; fill: black; text-anchor: start; }
+        .chart-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-gap: 5px;
+            justify-items: center;
+        }
+        @media (max-width: 900px) {
+            .chart-container {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 8px;
+            font-size: 14px;
+            background: lightgray;
+            border: 1px solid black;
+            border-radius: 4px;
+            pointer-events: none;
+            visibility: hidden;
+        }
+    </style>
+</head>
+<body>
+    <h2 style="text-align:center;">Xác suất bán hàng theo Mặt hàng trong Nhóm hàng</h2>
+    <div id="charts" class="chart-container"></div>
+    <div id="tooltip" class="tooltip"></div>
+
+    <script>
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
+
+        d3.csv(csvUrl).then(function(data) {
+            const nhomHangMap = new Map();
+            data.forEach(d => {
+                if (!nhomHangMap.has(d["Mã nhóm hàng"])) {
+                    nhomHangMap.set(d["Mã nhóm hàng"], d["Tên nhóm hàng"]);
+                }
+            });
+
+            const soDonTheoNhom = d3.rollup(data, v => new Set(v.map(d => d["Mã đơn hàng"])).size, d => d["Mã nhóm hàng"]);
+            const soDonTheoMatHang = d3.rollup(data, v => new Set(v.map(d => d["Mã đơn hàng"])).size, d => d["Mã nhóm hàng"], d => d["Mã mặt hàng"], d => d["Tên mặt hàng"]);
+
+            const chartData = [];
+            soDonTheoMatHang.forEach((matHangMap, maNhomHang) => {
+                matHangMap.forEach((tenMatHangMap, maMatHang) => {
+                    tenMatHangMap.forEach((soDonHang, tenMatHang) => {
+                        chartData.push({
+                            "Mã nhóm hàng": maNhomHang,
+                            "Tên nhóm hàng": nhomHangMap.get(maNhomHang),
+                            "Mã mặt hàng": `[${maMatHang}] ${tenMatHang}`,
+                            "Số đơn hàng": soDonHang,
+                            "Xác suất bán": (soDonHang / soDonTheoNhom.get(maNhomHang)) * 100
+                        });
+                    });
+                });
+            });
+
+            const top5Nhom = Array.from(nhomHangMap.keys()).slice(0, 5);
+            top5Nhom.forEach(maNhomHang => {
+                const groupData = chartData.filter(d => d["Mã nhóm hàng"] === maNhomHang).sort((a, b) => b["Xác suất bán"] - a["Xác suất bán"]);
+                if (groupData.length > 0) {
+                    createBarChart(groupData, `[${maNhomHang}] ${nhomHangMap.get(maNhomHang)}`);
+                }
+            });
+        }).catch(error => console.error("Error loading CSV:", error));
+
+        function createBarChart(data, chartTitle) {
+            const margin = {top: 40, right: 40, bottom: 50, left: 220};
+            const width = 450 - margin.left - margin.right;
+            const height = Math.max(200, data.length * 25) - margin.top - margin.bottom;
+
+            const svg = d3.select("#charts")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .style("margin", "5px")
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const tooltip = d3.select("#tooltip");
+            const color = d3.scaleOrdinal(d3.schemeTableau10);
+            const y = d3.scaleBand().domain(data.map(d => d["Mã mặt hàng"])).range([0, height]).padding(0.1);
+            const x = d3.scaleLinear().domain([0, d3.max(data, d => d["Xác suất bán"])]).nice().range([0, width]);
+
+            svg.selectAll(".bar")
+                .data(data)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("y", d => y(d["Mã mặt hàng"]))
+                .attr("x", 0)
+                .attr("height", y.bandwidth())
+                .attr("width", d => x(d["Xác suất bán"]))
+                .attr("fill", (d, i) => color(i))
+                .on("mouseover", function(event, d) {
+                    tooltip.style("visibility", "visible").text(`${d["Mã mặt hàng"]}: ${d["Xác suất bán"].toFixed(1)}%`);
+                })
+                .on("mousemove", function(event) {
+                    tooltip.style("top", (event.pageY - 10) + "px").style("left", (event.pageX + 10) + "px");
+                })
+                .on("mouseout", function() {
+                    tooltip.style("visibility", "hidden");
+                });
+
+            svg.append("g").call(d3.axisLeft(y));
+            svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).ticks(5).tickFormat(d => `${d.toFixed(0)}%`));
+
+            svg.append("text")
+                .attr("class", "title")
+                .attr("x", width / 2)
+                .attr("y", -10)
+                .attr("text-anchor", "middle")
+                .text(chartTitle);
+        }
+    </script>
+</body>
+</html>

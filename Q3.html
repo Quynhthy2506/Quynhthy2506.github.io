@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doanh số bán hàng theo Tháng</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .bar {
+            transition: opacity 0.3s;
+        }
+        .bar:hover {
+            opacity: 0.7;
+        }
+        .grid line {
+            stroke: lightgrey;
+            stroke-opacity: 0.7;
+            stroke-dasharray: 2,2;
+            shape-rendering: crispEdges;
+        }
+        .grid path {
+            stroke-width: 0;
+        }
+        .title {
+            font-size: 14px;
+            font-weight: bold;
+        }
+        #info {
+            margin-top: 20px;
+            font-size: 12px;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            pointer-events: none;
+            font-size: 12px;
+        }
+        .data-label {
+            text-anchor: middle;
+            font-size: 12px;
+            fill: black;
+        }
+    </style>
+</head>
+<body>
+    <svg width="1200" height="500"></svg>
+    <div id="info"></div>
+    <script>
+        // URL của file CSV từ Google Sheets
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
+
+        // Đọc và xử lý dữ liệu
+        d3.csv(csvUrl).then(function(rawData) {
+            // Chuyển đổi kiểu dữ liệu
+            rawData.forEach(d => {
+                d["SL"] = +d["SL"]; // Số lượng bán
+                d["Thành tiền"] = +d["Thành tiền"]; // Doanh số bán
+                // Chuyển cột 'Thời gian tạo đơn' thành ngày giờ
+                d["Thời gian tạo đơn"] = d3.timeParse("%Y-%m-%d %H:%M:%S")(d["Thời gian tạo đơn"]);
+            });
+
+            // Loại bỏ các dòng có giá trị 'Thời gian tạo đơn' không hợp lệ
+            const validData = rawData.filter(d => d["Thời gian tạo đơn"] !== null);
+
+            // Kiểm tra số giá trị lỗi
+            const numMissingDates = rawData.length - validData.length;
+            console.log(`Số giá trị không thể chuyển đổi thành datetime: ${numMissingDates}`);
+
+            // Trích xuất tháng và tạo cột 'Tháng'
+            validData.forEach(d => {
+                d["Tháng"] = d["Thời gian tạo đơn"].getMonth() + 1; // getMonth() trả về 0-11, nên +1
+            });
+
+            // Nhóm dữ liệu theo tháng
+            const groupedData = d3.rollup(
+                validData,
+                v => ({
+                    "Số lượng bán": d3.sum(v, d => d["SL"]),
+                    "Doanh số bán": d3.sum(v, d => d["Thành tiền"])
+                }),
+                d => d["Tháng"]
+            );
+
+            // Chuyển đổi dữ liệu thành mảng
+            const monthlySales = Array.from(groupedData, ([thang, value]) => ({
+                "Tháng": thang,
+                "Mã tháng": `Tháng ${thang.toString().padStart(2, '0')}`,
+                "Số lượng bán": value["Số lượng bán"],
+                "Doanh số bán": value["Doanh số bán"]
+            }));
+
+            // Sắp xếp theo tháng
+            monthlySales.sort((a, b) => a["Tháng"] - b["Tháng"]);
+
+            // Xác định tháng bán chạy nhất và kém nhất
+            const bestMonth = monthlySales.reduce((max, d) => d["Doanh số bán"] > max["Doanh số bán"] ? d : max, monthlySales[0]);
+            const worstMonth = monthlySales.reduce((min, d) => d["Doanh số bán"] < min["Doanh số bán"] ? d : min, monthlySales[0]);
+
+            // Thiết lập kích thước SVG
+            const margin = { top: 40, right: 20, bottom: 40, left: 60 };
+            const width = 1200 - margin.left - margin.right;
+            const height = 500 - margin.top - margin.bottom;
+
+            // Tạo SVG
+            const svg = d3.select("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            // Tạo tỷ lệ trục x với padding tăng lên
+            const x = d3.scaleBand()
+                .domain(monthlySales.map(d => d["Mã tháng"]))
+                .range([0, width])
+                .padding(0.1); // Tăng padding từ 0.1 lên 0.3 để tăng khoảng cách giữa cột
+
+            // Tạo tỷ lệ trục y
+            const maxDoanhSo = 800000000; // Cố định giới hạn tại 800M giống hình
+            const y = d3.scaleLinear()
+                .domain([0, maxDoanhSo])
+                .range([height, 0]);
+
+            // Tạo gradient màu (tương tự hình)
+            const color = d3.scaleOrdinal(d3.schemeTableau10)
+                .domain(monthlySales.map((d, i) => i));
+
+            // Thêm trục x
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x));
+
+            // Thêm trục y
+            svg.append("g")
+                .call(d3.axisLeft(y)
+                    .tickValues(d3.range(0, maxDoanhSo + 100000000, 200000000))
+                    .tickFormat(d => `${Math.round(d / 1000000)}M`));
+
+            // Tạo tooltip
+            const tooltip = d3.select("body")
+                .append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+
+            // Vẽ các thanh cột
+            const bars = svg.selectAll(".bar")
+                .data(monthlySales)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d["Mã tháng"]))
+                .attr("y", d => y(d["Doanh số bán"]))
+                .attr("width", x.bandwidth()) // Tăng độ rộng bằng cách giảm padding tương đối
+                .attr("height", d => height - y(d["Doanh số bán"]))
+                .attr("fill", (d, i) => color(i))
+                .on("mouseover", function(event, d) {
+                    d3.select(this).style("opacity", 0.7);
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 0.9);
+                    tooltip.html(`
+                        <strong>${d["Mã tháng"]}</strong><br/>
+                        Doanh số: ${d["Doanh số bán"].toLocaleString()} VNĐ<br/>
+                        Số lượng: ${d["Số lượng bán"]} SKU
+                    `)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).style("opacity", 1);
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+
+            // Thêm data label trong cột
+            svg.selectAll(".data-label")
+                .data(monthlySales)
+                .enter()
+                .append("text")
+                .attr("class", "data-label")
+                .attr("x", d => x(d["Mã tháng"]) + x.bandwidth() / 2)
+                .attr("y", d => y(d["Doanh số bán"]) - 15) // Điều chỉnh vị trí để nằm trong cột, cách đỉnh 15px
+                .text(d => `${Math.round(d["Doanh số bán"] / 1000000)} triệu VND`)
+                .attr("dy", "0.5em");
+
+            // Thêm tiêu đề
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", -20)
+                .attr("text-anchor", "middle")
+                .attr("class", "title")
+                .text("Doanh số bán hàng theo Tháng");
+
+
+        }).catch(function(error) {
+            console.log("Error loading CSV:", error);
+        });
+    </script>
+</body>
+</html>

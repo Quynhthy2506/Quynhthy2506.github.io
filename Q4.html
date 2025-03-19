@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doanh số bán hàng theo Ngày trong tuần</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .bar { transition: opacity 0.3s; }
+        .bar:hover { opacity: 0.7; }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            pointer-events: none;
+            font-size: 12px;
+            display: none;
+        }
+        .data-label { text-anchor: middle; font-size: 12px; fill: black; }
+    </style>
+</head>
+<body>
+    <svg width="800" height="500"></svg>
+    <div id="tooltip" class="tooltip"></div>
+    <script>
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
+
+        d3.csv(csvUrl).then(data => {
+            data.forEach(d => {
+                d['Thời gian tạo đơn'] = new Date(d['Thời gian tạo đơn']);
+                d.SL = +d.SL;
+                d['Đơn giá'] = +d['Đơn giá'];
+                d['Doanh thu'] = d.SL * d['Đơn giá'];
+                d['Ngày'] = d['Thời gian tạo đơn'].toISOString().split("T")[0];
+                d['Ngày trong tuần'] = (d['Thời gian tạo đơn'].getDay() + 6) % 7;
+            });
+
+            const grouped = d3.rollup(
+                data,
+                v => ({
+                    Tổng_Doanh_Số: d3.sum(v, d => d['Doanh thu']),
+                    Tổng_SL: d3.sum(v, d => d.SL),
+                    So_Ngày: new Set(v.map(d => d['Ngày'])).size
+                }),
+                d => d['Ngày trong tuần']
+            );
+
+            const dayLabels = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"];
+            const result = Array.from(grouped, ([dayIndex, stats]) => ({
+                dayIndex: +dayIndex,
+                dayLabel: dayLabels[dayIndex],
+                avgSales: stats.Tổng_Doanh_Số / stats.So_Ngày
+            })).sort((a, b) => a.dayIndex - b.dayIndex);
+
+            const margin = { top: 40, right: 20, bottom: 40, left: 80 },
+                width = 800 - margin.left - margin.right,
+                height = 500 - margin.top - margin.bottom;
+
+            const svg = d3.select("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleBand().domain(result.map(d => d.dayLabel)).range([0, width]).padding(0.1);
+            const y = d3.scaleLinear().domain([0, d3.max(result, d => d.avgSales) || 1]).range([height, 0]);
+
+            svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x));
+            svg.append("g").call(d3.axisLeft(y));
+
+            const tooltip = d3.select("#tooltip");
+
+            svg.selectAll(".bar")
+                .data(result)
+                .enter().append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d.dayLabel))
+                .attr("y", d => y(d.avgSales))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d.avgSales))
+                .attr("fill", (d, i) => d3.schemeTableau10[i])
+                .on("mouseover", (event, d) => {
+                    tooltip.style("display", "block")
+                        .html(`<strong>${d.dayLabel}</strong><br>Doanh thu: ${d.avgSales.toLocaleString("vi-VN", { maximumFractionDigits: 0 })} VND`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 20) + "px");
+                })
+                .on("mousemove", event => {
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                           .style("top", (event.pageY - 20) + "px");
+                })
+                .on("mouseout", () => tooltip.style("display", "none"));
+
+            svg.selectAll(".data-label")
+                .data(result)
+                .enter().append("text")
+                .attr("class", "data-label")
+                .attr("x", d => x(d.dayLabel) + x.bandwidth() / 2)
+                .attr("y", d => y(d.avgSales) - 5)
+                .text(d => d.avgSales.toLocaleString("vi-VN", { maximumFractionDigits: 0 }) + " VND");
+        }).catch(error => console.error("Error loading data:", error));
+    </script>
+</body>
+</html>

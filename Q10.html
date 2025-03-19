@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Xác suất bán hàng của Mặt hàng theo Nhóm hàng trong từng Tháng</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .chart-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
+        .chart-wrapper { display: flex; flex-direction: column; align-items: center; }
+        .line { fill: none; stroke-width: 2px; }
+        .marker { fill: white; stroke-width: 2px; }
+        .axis text { font-size: 12px; }
+        .title { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <h2 style="text-align: center;">Xác suất bán hàng của Mặt hàng theo Nhóm hàng trong từng Tháng</h2>
+    <div id="charts" class="chart-container"></div>
+
+    <script>
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
+
+        d3.csv(csvUrl).then(function(data) {
+            console.log("Raw Data:", data);
+
+            const nhomHangList = ["BOT", "SET", "THO", "TMX", "TTC"];
+            const nhomHangInfo = new Map(data.map(d => [d["Mã nhóm hàng"], d["Tên nhóm hàng"]]));
+
+            const processedData = d3.group(data, d => d["Mã nhóm hàng"], d => d["Tên mặt hàng"]);
+
+            nhomHangList.forEach((maNhom) => {
+                if (processedData.has(maNhom)) {
+                    createLineChart(processedData.get(maNhom), maNhom, nhomHangInfo.get(maNhom));
+                }
+            });
+        }).catch(error => console.error("Error loading CSV:", error));
+
+        function createLineChart(data, maNhom, tenNhom) {
+            const margin = { top: 40, right: 80, bottom: 50, left: 60 };
+            const width = 500 - margin.left - margin.right;
+            const height = 350 - margin.top - margin.bottom;
+
+            const svg = d3.select("#charts")
+                .append("div").attr("class", "chart-wrapper")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const months = Array.from({ length: 12 }, (_, i) => `T${String(i + 1).padStart(2, '0')}`);
+
+            let yMax = 0;
+            const allValues = [];
+
+            Object.keys(data).forEach(matHang => {
+                const values = months.map(m => {
+                    let val = +data[matHang].find(d => d["Tháng"] === m)?.["Xác suất bán"] || 0;
+                    yMax = Math.max(yMax, val);
+                    allValues.push({ month: m, value: val, matHang });
+                    return { month: m, value: val };
+                });
+            });
+
+            if (yMax < 1) yMax = 1;
+
+            const x = d3.scalePoint().domain(months).range([0, width]);
+            const y = d3.scaleLinear().domain([0, yMax]).range([height, 0]);
+
+            const color = d3.scaleOrdinal(d3.schemeTableau10);
+
+            svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x));
+            svg.append("g").call(d3.axisLeft(y).ticks(5).tickFormat(d => d3.format(".0%")(d)));
+
+            Object.keys(data).forEach((matHang, i) => {
+                const values = months.map(m => ({ 
+                    month: m, 
+                    value: +data[matHang].find(d => d["Tháng"] === m)?.["Xác suất bán"] || 0 
+                }));
+
+                const line = d3.line()
+                    .x(d => x(d.month))
+                    .y(d => y(d.value));
+
+                svg.append("path")
+                    .datum(values)
+                    .attr("class", "line")
+                    .attr("stroke", color(i))
+                    .attr("fill", "none")
+                    .attr("d", line);
+
+                svg.selectAll(`.marker-${i}`)
+                    .data(values)
+                    .enter()
+                    .append("circle")
+                    .attr("class", "marker")
+                    .attr("cx", d => x(d.month))
+                    .attr("cy", d => y(d.value))
+                    .attr("r", 4)
+                    .attr("stroke", color(i))
+                    .attr("fill", "white");
+            });
+
+            svg.append("text")
+                .attr("class", "title")
+                .attr("x", width / 2)
+                .attr("y", -10)
+                .attr("text-anchor", "middle")
+                .style("fill", "#006600")
+                .text(`[${maNhom}] ${tenNhom}`);
+        }
+    </script>
+</body>
+</html>

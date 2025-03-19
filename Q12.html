@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Phân phối mức chi trả của khách hàng</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .chart-container {
+            display: flex;
+            justify-content: center;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .chart-wrapper { display: flex; flex-direction: column; align-items: center; }
+        .bar { fill: #26C6DA; }
+        .bar:hover { opacity: 0.8; }
+        .axis text { font-size: 12px; }
+        .axis-x text { display: none; } /* Ẩn giá trị trên trục X */
+        .title { font-size: 16px; margin-bottom: 5px; }
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 8px;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 4px;
+            pointer-events: none;
+            opacity: 0;
+        }
+    </style>
+</head>
+<body>
+    <h2 style="text-align: center;">Phân phối Mức chi trả của Khách hàng</h2>
+    <div id="charts" class="chart-container"></div>
+    <div id="tooltip" class="tooltip"></div>
+
+    <script>
+        const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
+
+        d3.csv(csvUrl).then(function(data) {
+            // Tính tổng số tiền chi trả của từng khách hàng
+            const mucChiTieu = d3.rollup(
+                data,
+                v => d3.sum(v, d => +d["Thành tiền"]),
+                d => d["Mã khách hàng"]
+            );
+
+            const repeatData = Array.from(mucChiTieu, ([maKhachHang, mucChi]) => ({
+                "Mã khách hàng": maKhachHang,
+                "Mức chi tiêu": mucChi
+            }));
+
+            // Vẽ biểu đồ histogram
+            createHistogram(repeatData, "Phân phối Mức chi trả của Khách hàng");
+
+        }).catch(error => console.error("Error loading CSV:", error));
+
+        function createHistogram(data, title) {
+            const margin = { top: 40, right: 20, bottom: 50, left: 60 };
+            const width = 800 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            const svg = d3.select("#charts")
+                .append("div")
+                .attr("class", "chart-wrapper")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const tooltip = d3.select("#tooltip");
+
+            // Tính histogram với khoảng 50,000
+            const maxChiTieu = d3.max(data, d => d["Mức chi tiêu"]);
+            const binSize = 50000;
+            const numBins = Math.ceil(maxChiTieu / binSize);
+            const thresholds = Array.from({ length: numBins }, (_, i) => i * binSize);
+
+            const x = d3.scaleLinear()
+                .domain([0, numBins * binSize])
+                .nice()
+                .range([0, width]);
+
+            const histogram = d3.histogram()
+                .value(d => d["Mức chi tiêu"])
+                .domain(x.domain())
+                .thresholds(thresholds); // Chia theo khoảng 50,000
+
+            const bins = histogram(data);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(bins, d => d.length)])
+                .nice()
+                .range([height, 0]);
+
+            // Vẽ cột histogram
+            svg.selectAll(".bar")
+                .data(bins)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d.x0))
+                .attr("width", d => Math.max(0, x(d.x1) - x(d.x0) - 1))
+                .attr("y", d => y(d.length))
+                .attr("height", d => height - y(d.length))
+                .on("mouseover", function(event, d) {
+                    const chiTieuTu = Math.floor(d.x0);
+                    const chiTieuDen = Math.floor(d.x1);
+                    const soLuong = d.length;
+                    tooltip.transition().duration(200).style("opacity", 0.9);
+                    tooltip.html(`Chi tiêu KH (bin) Từ ${chiTieuTu.toLocaleString()} đến ${chiTieuDen.toLocaleString()}<br>Số lượng KH ${soLuong}`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mousemove", function(event) {
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function() {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                });
+
+            // Định dạng trục
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .attr("class", "axis-x")  // Thêm class để ẩn giá trị trục X
+                .call(d3.axisBottom(x).tickFormat("")); // Không hiển thị giá trị
+
+            svg.append("g")
+                .call(d3.axisLeft(y).tickFormat(d => {
+                    if (d >= 1000) {
+                        return d % 1000 === 0 ? `${d / 1000}K` : `${(d / 1000).toFixed(1)}K`;
+                    }
+                    return d;
+                }));
+
+            // Bỏ viền spines
+            svg.selectAll(".domain").style("display", "none");
+
+            // Tiêu đề
+            svg.append("text")
+                .attr("class", "title")
+                .attr("x", width / 2)
+                .attr("y", -10)
+                .attr("text-anchor", "middle")
+                .text(title);
+        }
+    </script>
+</body>
+</html>
