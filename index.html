@@ -9,28 +9,19 @@
         body {
             font-family: Arial, sans-serif;
         }
+        #menu {
+            margin-bottom: 20px;
+        }
+        #menu a {
+            margin-right: 10px;
+            text-decoration: none;
+            color: blue;
+        }
         .bar {
             transition: opacity 0.3s;
         }
         .bar:hover {
             opacity: 0.7;
-        }
-        .grid line {
-            stroke: lightgrey;
-            stroke-opacity: 0.7;
-            stroke-dasharray: 2,2;
-            shape-rendering: crispEdges;
-        }
-        .grid path {
-            stroke-width: 0;
-        }
-        .title {
-            font-size: 14px;
-            font-weight: bold;
-        }
-        #info {
-            margin-top: 20px;
-            font-size: 12px;
         }
         .tooltip {
             position: absolute;
@@ -44,15 +35,34 @@
     </style>
 </head>
 <body>
+    <!-- Menu điều hướng -->
+    <div id="menu">
+        <strong>Xem các biểu đồ khác:</strong>
+        <a href="Q2.html">Q2</a>
+        <a href="Q3.html">Q3</a>
+        <a href="Q4.html">Q4</a>
+        <a href="Q5.html">Q5</a>
+        <a href="Q6.html">Q6</a>
+        <a href="Q7.html">Q7</a>
+        <a href="Q8.html">Q8</a>
+        <a href="Q9.html">Q9</a>
+        <a href="Q10.html">Q10</a>
+        <a href="Q11.html">Q11</a>
+        <a href="Q12.html">Q12</a>
+    </div>
+
     <svg width="1000" height="600"></svg>
     <div id="info"></div>
+
     <script>
         const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
+        
         d3.csv(csvUrl).then(function(rawData) {
             rawData.forEach(d => {
                 d["SL"] = +d["SL"];
                 d["Thành tiền"] = +d["Thành tiền"];
             });
+
             const groupedData = d3.rollup(
                 rawData,
                 v => ({
@@ -62,6 +72,7 @@
                 }),
                 d => d["Mã mặt hàng"] + "|" + d["Tên mặt hàng"]
             );
+
             const data = Array.from(groupedData, ([key, value]) => {
                 const [maMatHang, tenMatHang] = key.split("|");
                 return {
@@ -73,60 +84,45 @@
                     "Tên nhóm hàng": value["Tên nhóm hàng"]
                 };
             });
+
             data.sort((a, b) => b["Doanh số bán"] - a["Doanh số bán"]);
             const top20 = data.slice(0, 20);
+
             const margin = { top: 40, right: 20, bottom: 30, left: 300 };
             const width = 1000 - margin.left - margin.right;
             const height = 600 - margin.top - margin.bottom;
+
             const svg = d3.select("svg")
                 .attr("width", width + margin.left + margin.right)
                 .attr("height", height + margin.top + margin.bottom)
                 .append("g")
                 .attr("transform", `translate(${margin.left},${margin.top})`);
+
             const maxDoanhSo = 600000000; 
-            const x = d3.scaleLinear()
-                .domain([0, maxDoanhSo])
-                .range([0, width]);
-            const y = d3.scaleBand()
-                .domain(top20.map(d => d["Mặt hàng"]))
-                .range([0, height])
-                .padding(0.1);
-            const uniqueGroups = [...new Set(top20.map(d => d["Tên nhóm hàng"]))];
+            const x = d3.scaleLinear().domain([0, maxDoanhSo]).range([0, width]);
+            const y = d3.scaleBand().domain(top20.map(d => d["Mặt hàng"])).range([0, height]).padding(0.1);
+
             const color = d3.scaleOrdinal(d3.schemeTableau10)
-                .domain(uniqueGroups)
-                .range(d3.schemeSpectral[uniqueGroups.length]);
-            svg.append("g")
-                .attr("class", "grid")
-                .call(d3.axisTop(x)
-                    .ticks(6)
-                    .tickSize(-height)
-                    .tickFormat(d => `${Math.round(d / 1000000)}M`));
-            svg.append("g")
-                .attr("transform", `translate(0,${height})`)
-                .call(d3.axisBottom(x)
-                    .ticks(6)
-                    .tickFormat(d => `${Math.round(d / 1000000)}M`));
-            svg.append("g")
-                .call(d3.axisLeft(y));
-            const tooltip = d3.select("body")
-                .append("div")
-                .attr("class", "tooltip")
-                .style("opacity", 0);
+                .domain([...new Set(top20.map(d => d["Tên nhóm hàng"]))]);
+
+            svg.append("g").call(d3.axisLeft(y));
+            svg.append("g").call(d3.axisBottom(x).ticks(6).tickFormat(d => `${Math.round(d / 1000000)}M`));
+
+            const tooltip = d3.select("body").append("div").attr("class", "tooltip").style("opacity", 0);
+
             svg.selectAll(".bar")
                 .data(top20)
                 .enter()
                 .append("rect")
                 .attr("class", "bar")
                 .attr("x", 0)
-                .attr("y", (d, i) => y(d["Mặt hàng"]))
+                .attr("y", d => y(d["Mặt hàng"]))
                 .attr("width", d => x(d["Doanh số bán"]))
                 .attr("height", y.bandwidth())
                 .attr("fill", d => color(d["Tên nhóm hàng"]))
                 .on("mouseover", function(event, d) {
                     d3.select(this).style("opacity", 0.7);
-                    tooltip.transition()
-                        .duration(200)
-                        .style("opacity", 0.9);
+                    tooltip.transition().duration(200).style("opacity", 0.9);
                     tooltip.html(`
                         <strong>${d["Tên mặt hàng"]}</strong><br/>
                         Mã: ${d["Mã mặt hàng"]}<br/>
@@ -134,15 +130,14 @@
                         Doanh số: ${d["Doanh số bán"].toLocaleString()} VNĐ<br/>
                         Số lượng: ${d["Số lượng bán"]} SKU
                     `)
-                        .style("left", (event.pageX + 10) + "px")
-                        .style("top", (event.pageY - 28) + "px");
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 28) + "px");
                 })
                 .on("mouseout", function() {
                     d3.select(this).style("opacity", 1);
-                    tooltip.transition()
-                        .duration(500)
-                        .style("opacity", 0);
+                    tooltip.transition().duration(500).style("opacity", 0);
                 });
+
             svg.append("text")
                 .attr("x", width / 2)
                 .attr("y", -20)
