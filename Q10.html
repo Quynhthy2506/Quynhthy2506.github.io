@@ -5,110 +5,292 @@
     <title>Xác suất bán hàng của Mặt hàng theo Nhóm hàng trong từng Tháng</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .chart-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
-        .chart-wrapper { display: flex; flex-direction: column; align-items: center; }
-        .line { fill: none; stroke-width: 2px; }
-        .marker { fill: white; stroke-width: 2px; }
-        .axis text { font-size: 12px; }
-        .title { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h2 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        #charts {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: auto auto;
+            gap: 20px;
+            max-width: 1200px;
+            margin: auto;
+        }
+        .chart-container {
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .chart-container.top-row {
+            grid-row: 1;
+        }
+        .chart-container.bottom-row {
+            grid-row: 2;
+        }
+        .chart-container.bottom-row:nth-child(4) {
+            grid-column: 1;
+        }
+        .chart-container.bottom-row:nth-child(5) {
+            grid-column: 2;
+        }
+        .line {
+            fill: none;
+            stroke-width: 2px;
+        }
+        .dot {
+            stroke: #fff;
+            stroke-width: 1.5;
+        }
+        .tooltip {
+            position: absolute;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            pointer-events: none;
+            opacity: 0;
+            z-index: 1000;
+        }
+        .error-message {
+            color: red;
+            padding: 20px;
+            text-align: center;
+        }
+        .axis text {
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
-    <h2 style="text-align: center;">Xác suất bán hàng của Mặt hàng theo Nhóm hàng trong từng Tháng</h2>
-    <div id="charts" class="chart-container"></div>
+    <h2>Xác suất bán hàng của Mặt hàng theo Nhóm hàng trong từng Tháng</h2>
+    <div id="charts"></div>
 
     <script>
         const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
 
         d3.csv(csvUrl).then(function(data) {
-            console.log("Raw Data:", data);
+            try {
+                // Lọc và xử lý dữ liệu
+                data = data.filter(d => {
+                    try {
+                        const date = new Date(d["Thời gian tạo đơn"]);
+                        if (isNaN(date.getTime())) return false;
 
-            const nhomHangList = ["BOT", "SET", "THO", "TMX", "TTC"];
-            const nhomHangInfo = new Map(data.map(d => [d["Mã nhóm hàng"], d["Tên nhóm hàng"]]));
+                        if (!d["Mã đơn hàng"] || !d["Mã nhóm hàng"] || !d["Tên nhóm hàng"] ||
+                            !d["Mã mặt hàng"] || !d["Tên mặt hàng"]) return false;
 
-            const processedData = d3.group(data, d => d["Mã nhóm hàng"], d => d["Tên mặt hàng"]);
+                        d["Tháng"] = "T" + (date.getMonth() + 1).toString().padStart(2, '0');
+                        d["Nhóm hàng"] = `[${d["Mã nhóm hàng"]}] ${d["Tên nhóm hàng"]}`;
+                        d["Mặt hàng"] = `[${d["Mã mặt hàng"]}] ${d["Tên mặt hàng"]}`;
+                        return true;
+                    } catch (e) {
+                        console.error("Lỗi xử lý dữ liệu:", e, d);
+                        return false;
+                    }
+                });
 
-            nhomHangList.forEach((maNhom) => {
-                if (processedData.has(maNhom)) {
-                    createLineChart(processedData.get(maNhom), maNhom, nhomHangInfo.get(maNhom));
-                }
-            });
-        }).catch(error => console.error("Error loading CSV:", error));
+                const dataByGroup = d3.group(data, d => d["Nhóm hàng"]);
 
-        function createLineChart(data, maNhom, tenNhom) {
-            const margin = { top: 40, right: 80, bottom: 50, left: 60 };
-            const width = 500 - margin.left - margin.right;
-            const height = 350 - margin.top - margin.bottom;
+                const nhomHangList = Array.from(dataByGroup.keys()).slice(0, 5);
 
-            const svg = d3.select("#charts")
-                .append("div").attr("class", "chart-wrapper")
-                .append("svg")
-                .attr("width", width + margin.left + margin.right)
-                .attr("height", height + margin.top + margin.bottom)
-                .append("g")
+                const mainContainer = d3.select("#charts");
+
+                const tooltip = d3.select("body").append("div")
+                    .attr("class", "tooltip")
+                    .style("position", "absolute")
+                    .style("background", "white")
+                    .style("border", "1px solid #ddd")
+                    .style("border-radius", "5px")
+                    .style("padding", "10px")
+                    .style("box-shadow", "0 0 10px rgba(0,0,0,0.1)")
+                    .style("pointer-events", "none")
+                    .style("opacity", 0)
+                    .style("z-index", 1000);
+
+                nhomHangList.forEach((nhom, index) => {
+                    const filteredData = dataByGroup.get(nhom);
+
+                    const countByItemMonth = Array.from(
+                        d3.rollup(
+                            filteredData,
+                            v => new Set(v.map(d => d["Mã đơn hàng"])).size,
+                            d => d["Tháng"],
+                            d => d["Mặt hàng"]
+                        ),
+                        ([month, items]) => Array.from(items, ([item, count]) => ({ month, item, count }))
+                    ).flat();
+
+                    const totalOrdersByMonth = new Map(
+                        d3.rollup(
+                            filteredData,
+                            v => new Set(v.map(d => d["Mã đơn hàng"])).size,
+                            d => d["Tháng"]
+                        )
+                    );
+
+                    const probabilities = countByItemMonth.map(d => {
+                        const total = totalOrdersByMonth.get(d.month) || 0;
+                        return {
+                            month: d.month,
+                            item: d.item,
+                            count: d.count,
+                            probability: total > 0 ? d.count / total : 0
+                        };
+                    });
+
+                    const topItems = [...new Set(probabilities.map(d => d.item))]
+                        .map(item => {
+                            const itemData = probabilities.filter(d => d.item === item);
+                            const avgProb = d3.mean(itemData, d => d.probability);
+                            return { item, avgProb };
+                        })
+                        .sort((a, b) => b.avgProb - a.avgProb)
+                        .slice(0, 5)
+                        .map(d => d.item);
+
+                    const filteredProbabilities = probabilities.filter(d => topItems.includes(d.item));
+
+                    const container = mainContainer.append("div")
+                        .attr("class", `chart-container ${index < 3 ? 'top-row' : 'bottom-row'}`)
+                        .style("border", "1px solid #ddd")
+                        .style("padding", "15px")
+                        .style("border-radius", "8px")
+                        .style("background", "#fff")
+                        .style("box-shadow", "0 2px 5px rgba(0,0,0,0.1)");
+
+                    drawLineChart(container, filteredProbabilities, nhom, tooltip);
+                });
+
+            } catch (error) {
+                console.error("Lỗi khi xử lý dữ liệu:", error);
+                d3.select("#charts").append("div")
+                    .attr("class", "error-message")
+                    .style("color", "red")
+                    .style("padding", "20px")
+                    .text("Đã xảy ra lỗi khi xử lý dữ liệu: " + error.message);
+            }
+        }).catch(error => {
+            console.error("Lỗi khi tải dữ liệu:", error);
+            d3.select("#charts").append("div")
+                .attr("class", "error-message")
+                .style("color", "red")
+                .style("padding", "20px")
+                .text("Không thể tải dữ liệu từ file CSV: " + error.message);
+        });
+
+        function drawLineChart(container, data, title, tooltip) {
+            const width = 350, height = 250;
+            const margin = { top: 30, right: 20, bottom: 40, left: 50 };
+
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+
+            const svg = container.append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            const g = svg.append("g")
                 .attr("transform", `translate(${margin.left},${margin.top})`);
 
+            // Tạo danh sách tháng từ T01 đến T12
             const months = Array.from({ length: 12 }, (_, i) => `T${String(i + 1).padStart(2, '0')}`);
 
-            let yMax = 0;
-            const allValues = [];
+            // Tạo scale
+            const x = d3.scalePoint()
+                .domain(months)
+                .range([0, chartWidth]);
 
-            Object.keys(data).forEach(matHang => {
-                const values = months.map(m => {
-                    let val = +data[matHang].find(d => d["Tháng"] === m)?.["Xác suất bán"] || 0;
-                    yMax = Math.max(yMax, val);
-                    allValues.push({ month: m, value: val, matHang });
-                    return { month: m, value: val };
-                });
-            });
-
-            if (yMax < 1) yMax = 1;
-
-            const x = d3.scalePoint().domain(months).range([0, width]);
-            const y = d3.scaleLinear().domain([0, yMax]).range([height, 0]);
+            // Tinh chỉnh trục Y: Đặt từ giá trị tối thiểu đến tối đa, giảm khoảng trống
+            const probabilities = data.map(d => d.probability).filter(p => p > 0); // Lọc bỏ giá trị 0
+            const minProbability = d3.min(probabilities) || 0;
+            const maxProbability = d3.max(probabilities) || 1;
+            const yMin = Math.max(0, minProbability - 0.02); // Giảm 2% dưới giá trị nhỏ nhất, nhưng không nhỏ hơn 0
+            const yMax = maxProbability + 0.02; // Thêm 2% trên giá trị lớn nhất
+            const y = d3.scaleLinear()
+                .domain([yMin, yMax])
+                .range([chartHeight, 0]);
 
             const color = d3.scaleOrdinal(d3.schemeTableau10);
 
-            svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x));
-            svg.append("g").call(d3.axisLeft(y).ticks(5).tickFormat(d => d3.format(".0%")(d)));
+            // Vẽ trục
+            g.append("g")
+                .attr("class", "axis")
+                .attr("transform", `translate(0,${chartHeight})`)
+                .call(d3.axisBottom(x));
 
-            Object.keys(data).forEach((matHang, i) => {
-                const values = months.map(m => ({ 
-                    month: m, 
-                    value: +data[matHang].find(d => d["Tháng"] === m)?.["Xác suất bán"] || 0 
-                }));
+            g.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y).tickFormat(d3.format(".0%")));
 
-                const line = d3.line()
-                    .x(d => x(d.month))
-                    .y(d => y(d.value));
+            // Vẽ đường và điểm
+            const line = d3.line()
+                .x(d => x(d.month))
+                .y(d => y(d.probability))
+                .defined(d => d.probability !== undefined && !isNaN(d.probability));
 
-                svg.append("path")
-                    .datum(values)
+            const groupedData = d3.group(data, d => d.item);
+            let colorIndex = 0;
+
+            groupedData.forEach((values, item) => {
+                const completeValues = months.map(m => {
+                    const found = values.find(v => v.month === m);
+                    return {
+                        month: m,
+                        probability: found ? found.probability : 0
+                    };
+                });
+
+                // Vẽ đường
+                g.append("path")
+                    .datum(completeValues)
                     .attr("class", "line")
-                    .attr("stroke", color(i))
-                    .attr("fill", "none")
+                    .attr("stroke", color(colorIndex))
                     .attr("d", line);
 
-                svg.selectAll(`.marker-${i}`)
-                    .data(values)
+                // Vẽ điểm
+                g.selectAll(`.dot-${colorIndex}`)
+                    .data(completeValues)
                     .enter()
                     .append("circle")
-                    .attr("class", "marker")
+                    .attr("class", "dot")
                     .attr("cx", d => x(d.month))
-                    .attr("cy", d => y(d.value))
+                    .attr("cy", d => y(d.probability))
                     .attr("r", 4)
-                    .attr("stroke", color(i))
-                    .attr("fill", "white");
+                    .attr("fill", color(colorIndex))
+                    .attr("stroke", "#fff")
+                    .on("mouseover", function(event, d) {
+                        tooltip.transition().duration(200).style("opacity", 0.9);
+                        tooltip.html(`${item}<br>Tháng: ${d.month}<br>Xác suất: ${(d.probability * 100).toFixed(1)}%`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mousemove", function(event) {
+                        tooltip.style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseout", function() {
+                        tooltip.transition().duration(500).style("opacity", 0);
+                    });
+
+                colorIndex++;
             });
 
-            svg.append("text")
-                .attr("class", "title")
-                .attr("x", width / 2)
+            // Tiêu đề
+            g.append("text")
+                .attr("x", chartWidth / 2)
                 .attr("y", -10)
                 .attr("text-anchor", "middle")
-                .style("fill", "#006600")
-                .text(`[${maNhom}] ${tenNhom}`);
+                .style("font-size", "14px")
+                .text(title);
         }
     </script>
 </body>
