@@ -32,31 +32,65 @@
             pointer-events: none;
             font-size: 12px;
         }
+        #contentFrame {
+            width: 100%;
+            height: 600px;
+            border: none;
+            display: none; /* Initially hidden */
+        }
+        #q1Chart {
+            display: block; /* Initially visible */
+        }
     </style>
 </head>
 <body>
     <!-- Menu điều hướng -->
     <div id="menu">
         <strong>Xem các biểu đồ khác:</strong>
-        <a href="Q2.html">Q2</a>
-        <a href="Q3.html">Q3</a>
-        <a href="Q4.html">Q4</a>
-        <a href="Q5.html">Q5</a>
-        <a href="Q6.html">Q6</a>
-        <a href="Q7.html">Q7</a>
-        <a href="Q8.html">Q8</a>
-        <a href="Q9.html">Q9</a>
-        <a href="Q10.html">Q10</a>
-        <a href="Q11.html">Q11</a>
-        <a href="Q12.html">Q12</a>
+        <a href="javascript:void(0)" onclick="showChart('Q1')">Q1</a>
+        <a href="Q2.html" target="contentFrame" onclick="showChart('Q2')">Q2</a>
+        <a href="Q3.html" target="contentFrame" onclick="showChart('Q3')">Q3</a>
+        <a href="Q4.html" target="contentFrame" onclick="showChart('Q4')">Q4</a>
+        <a href="Q5.html" target="contentFrame" onclick="showChart('Q5')">Q5</a>
+        <a href="Q6.html" target="contentFrame" onclick="showChart('Q6')">Q6</a>
+        <a href="Q7.html" target="contentFrame" onclick="showChart('Q7')">Q7</a>
+        <a href="Q8.html" target="contentFrame" onclick="showChart('Q8')">Q8</a>
+        <a href="Q9.html" target="contentFrame" onclick="showChart('Q9')">Q9</a>
+        <a href="Q10.html" target="contentFrame" onclick="showChart('Q10')">Q10</a>
+        <a href="Q11.html" target="contentFrame" onclick="showChart('Q11')">Q11</a>
+        <a href="Q12.html" target="contentFrame" onclick="showChart('Q12')">Q12</a>
     </div>
 
-    <svg width="1000" height="600"></svg>
-    <div id="info"></div>
+    <!-- Biểu đồ Q1 (mặc định) -->
+    <div id="q1Chart">
+        <svg width="1000" height="600"></svg>
+        <div id="info"></div>
+    </div>
+
+    <!-- Iframe để hiển thị các biểu đồ từ Q2 đến Q12 -->
+    <iframe id="contentFrame" name="contentFrame"></iframe>
 
     <script>
+        // Function to toggle between Q1 chart and iframe charts
+        function showChart(quarter) {
+            const q1Chart = document.getElementById('q1Chart');
+            const contentFrame = document.getElementById('contentFrame');
+
+            if (quarter === 'Q1') {
+                // Show Q1 chart, hide iframe
+                q1Chart.style.display = 'block';
+                contentFrame.style.display = 'none';
+                contentFrame.src = ''; // Clear iframe content
+            } else {
+                // Hide Q1 chart, show iframe with selected quarter
+                q1Chart.style.display = 'none';
+                contentFrame.style.display = 'block';
+            }
+        }
+
+        // Load the default Q1 chart
         const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS5YkI613Xtm0-uSA6NozEkDAWm17X7G-iCh_tVPrEv48RNmwgqkRpdwFcJntWRcTQOoMv1y2T1bBwC/pub?gid=1701574632&single=true&output=csv";
-        
+       
         d3.csv(csvUrl).then(function(rawData) {
             rawData.forEach(d => {
                 d["SL"] = +d["SL"];
@@ -92,13 +126,13 @@
             const width = 1000 - margin.left - margin.right;
             const height = 600 - margin.top - margin.bottom;
 
-            const svg = d3.select("svg")
+            const svg = d3.select("#q1Chart svg")
                 .attr("width", width + margin.left + margin.right)
                 .attr("height", height + margin.top + margin.bottom)
                 .append("g")
                 .attr("transform", `translate(${margin.left},${margin.top})`);
 
-            const maxDoanhSo = 600000000; 
+            const maxDoanhSo = 600000000;
             const x = d3.scaleLinear().domain([0, maxDoanhSo]).range([0, width]);
             const y = d3.scaleBand().domain(top20.map(d => d["Mặt hàng"])).range([0, height]).padding(0.1);
 
@@ -137,15 +171,6 @@
                     d3.select(this).style("opacity", 1);
                     tooltip.transition().duration(500).style("opacity", 0);
                 });
-
-            svg.append("text")
-                .attr("x", width / 2)
-                .attr("y", -20)
-                .attr("text-anchor", "middle")
-                .attr("class", "title")
-                .text("Doanh số bán hàng theo Mặt hàng");
-        }).catch(function(error) {
-            console.log("Error loading CSV:", error);
         });
     </script>
 </body>
