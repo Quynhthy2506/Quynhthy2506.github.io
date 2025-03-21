@@ -132,6 +132,15 @@
                 .append("g")
                 .attr("transform", `translate(${margin.left},${margin.top})`);
 
+            // Thêm tiêu đề cho biểu đồ
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", -10)
+                .attr("text-anchor", "middle")
+                .style("font-size", "20px")
+                .style("font-weight", "bold")
+                .text("Doanh số bán hàng theo Mặt hàng");
+
             const maxDoanhSo = 600000000;
             const x = d3.scaleLinear().domain([0, maxDoanhSo]).range([0, width]);
             const y = d3.scaleBand().domain(top20.map(d => d["Mặt hàng"])).range([0, height]).padding(0.1);
