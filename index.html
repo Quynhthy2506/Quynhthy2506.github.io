@@ -148,8 +148,15 @@
             const color = d3.scaleOrdinal(d3.schemeTableau10)
                 .domain([...new Set(top20.map(d => d["Tên nhóm hàng"]))]);
 
+            // Thêm trục Y (bên trái)
             svg.append("g").call(d3.axisLeft(y));
-            svg.append("g").call(d3.axisBottom(x).ticks(6).tickFormat(d => `${Math.round(d / 1000000)}M`));
+
+            // Thêm trục X (bên dưới) và định dạng theo triệu (M)
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`) // Đặt trục X xuống dưới cùng
+                .call(d3.axisBottom(x)
+                    .ticks(6)
+                    .tickFormat(d => `${Math.round(d / 1000000)}M`));
 
             const tooltip = d3.select("body").append("div").attr("class", "tooltip").style("opacity", 0);
 
